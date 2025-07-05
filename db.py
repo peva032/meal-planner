@@ -1,6 +1,7 @@
 import duckdb
 from typing import List, Tuple, Optional
 import os
+from units import Unit
 
 
 class DbClient:
@@ -37,7 +38,7 @@ class DbClient:
                 CREATE TABLE IF NOT EXISTS ingredients (
                     id INTEGER PRIMARY KEY DEFAULT nextval('ingredients_id_seq'),
                     name VARCHAR UNIQUE NOT NULL,
-                    unit VARCHAR NOT NULL DEFAULT 'unit'
+                    unit VARCHAR NOT NULL DEFAULT 'piece'
                 )
             """)
             

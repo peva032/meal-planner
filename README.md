@@ -5,6 +5,7 @@ A simple Streamlit application for planning meals and generating shopping lists.
 ## Features
 
 - **Add Meals**: Create new meals with their ingredients and quantities
+- **Standardized Units**: Uses predefined metric units for consistency
 - **Generate Shopping Lists**: Select multiple meals and get an aggregated shopping list
 - **View Meals**: Browse all stored meals and their ingredients
 - **Data Persistence**: Uses DuckDB for local data storage
@@ -65,6 +66,7 @@ The application uses three tables:
 
 - `app.py`: Main Streamlit application
 - `db.py`: Database client class for DuckDB operations
+- `units.py`: Unit enum with standardized metric units
 - `example_usage.py`: Example script demonstrating DbClient usage
 - `meal_planner.db`: DuckDB database file (created automatically)
 
@@ -78,6 +80,19 @@ The database operations are encapsulated in the `DbClient` class in `db.py`. Key
 - `generate_shopping_list(meal_ids)`: Generate aggregated shopping list
 - `delete_meal(meal_id)`: Delete a meal
 - `update_meal(meal_id, name, description, ingredients)`: Update an existing meal
+
+## Units
+
+The application uses standardized metric units defined in the `Unit` enum:
+
+**Weight/Mass:** gram (g), kilogram (kg)  
+**Volume - Liquid:** millilitre (ml), litre (l)  
+**Volume - Cooking:** teaspoon (tsp), tablespoon (tbsp), cup  
+**Count:** piece, pieces, clove, cloves  
+**Length:** centimetre (cm)  
+**Special:** pinch, dash  
+**Containers:** can, jar, bottle, packet, bag  
+**Fresh Produce:** head, bunch, stalk, leaf, leaves  
 
 ## Example Usage
 

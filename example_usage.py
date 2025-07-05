@@ -5,6 +5,7 @@ This script demonstrates how to use the database client programmatically.
 """
 
 from db import DbClient
+from units import Unit
 
 
 def main():
@@ -19,11 +20,11 @@ def main():
     
     # Meal 1: Pasta Carbonara
     pasta_ingredients = [
-        ("spaghetti", 400, "g"),
-        ("eggs", 4, "pieces"),
-        ("bacon", 200, "g"),
-        ("parmesan cheese", 100, "g"),
-        ("black pepper", 1, "tsp")
+        ("spaghetti", 400, Unit.GRAM.value),
+        ("eggs", 4, Unit.PIECES.value),
+        ("bacon", 200, Unit.GRAM.value),
+        ("parmesan cheese", 100, Unit.GRAM.value),
+        ("black pepper", 1, Unit.TEASPOON.value)
     ]
     
     success = db.add_meal(
@@ -35,11 +36,11 @@ def main():
     
     # Meal 2: Caesar Salad
     salad_ingredients = [
-        ("romaine lettuce", 1, "head"),
-        ("parmesan cheese", 50, "g"),
-        ("croutons", 1, "cup"),
-        ("caesar dressing", 3, "tbsp"),
-        ("anchovy fillets", 4, "pieces")
+        ("romaine lettuce", 1, Unit.HEAD.value),
+        ("parmesan cheese", 50, Unit.GRAM.value),
+        ("croutons", 1, Unit.CUP.value),
+        ("caesar dressing", 3, Unit.TABLESPOON.value),
+        ("anchovy fillets", 4, Unit.PIECES.value)
     ]
     
     success = db.add_meal(
@@ -51,13 +52,13 @@ def main():
     
     # Meal 3: Chicken Stir Fry
     stirfry_ingredients = [
-        ("chicken breast", 300, "g"),
-        ("bell peppers", 2, "pieces"),
-        ("onion", 1, "piece"),
-        ("soy sauce", 3, "tbsp"),
-        ("rice", 200, "g"),
-        ("garlic", 3, "cloves"),
-        ("ginger", 1, "tsp")
+        ("chicken breast", 300, Unit.GRAM.value),
+        ("bell peppers", 2, Unit.PIECES.value),
+        ("onion", 1, Unit.PIECE.value),
+        ("soy sauce", 3, Unit.TABLESPOON.value),
+        ("rice", 200, Unit.GRAM.value),
+        ("garlic", 3, Unit.CLOVES.value),
+        ("ginger", 1, Unit.TEASPOON.value)
     ]
     
     success = db.add_meal(

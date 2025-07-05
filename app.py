@@ -3,6 +3,7 @@ import pandas as pd
 from typing import List, Dict, Tuple
 import os
 from db import DbClient
+from units import Unit
 
 # Initialize database client
 @st.cache_resource
@@ -35,13 +36,31 @@ def main():
             st.session_state.ingredients = []
         
         # Add ingredient form
-        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        col1, col2, col3, col4 = st.columns([3, 1, 1.5, 1])
         with col1:
             ingredient_name = st.text_input("Ingredient Name", key="ingredient_name")
         with col2:
             quantity = st.number_input("Quantity", min_value=0.0, step=0.1, key="quantity")
         with col3:
-            unit = st.text_input("Unit", value="unit", key="unit")
+            # Get unit options for selectbox
+            unit_options = Unit.get_display_options()
+            unit_display_names = [option[0] for option in unit_options]
+            unit_values = [option[1] for option in unit_options]
+            
+            # Default to "Gram (g)"
+            default_index = unit_values.index(Unit.GRAM.value) if Unit.GRAM.value in unit_values else 0
+            
+            selected_unit_display = st.selectbox(
+                "Unit", 
+                options=unit_display_names,
+                index=default_index,
+                key="unit_select"
+            )
+            
+            # Get the actual unit value from the display name
+            selected_index = unit_display_names.index(selected_unit_display)
+            unit = unit_values[selected_index]
+            
         with col4:
             if st.button("Add Ingredient"):
                 if ingredient_name and quantity > 0:
