@@ -4,8 +4,7 @@ Example usage of the DbClient for the meal planner application.
 This script demonstrates how to use the database client programmatically.
 """
 
-from db import DbClient
-from units import Unit
+from meal_planner import DbClient, Unit
 
 
 def main():

@@ -1,7 +1,7 @@
 import duckdb
 from typing import List, Tuple, Optional
 import os
-from units import Unit
+from .units import Unit
 
 
 class DbClient:

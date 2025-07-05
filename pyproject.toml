@@ -1,10 +1,32 @@
 [project]
 name = "meal-planner"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "A simple meal planning and shopping list generation application"
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [
+    {name = "Meal Planner Team"},
+]
+keywords = ["meal", "planning", "shopping", "list", "cooking", "recipes"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Home Automation",
+    "Topic :: Office/Business :: Scheduling",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "duckdb>=1.3.1",
     "streamlit>=1.46.1",
+    "pandas>=2.3.0",
 ]
+
+[project.scripts]
+meal-planner = "meal_planner.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/example/meal-planner"
+Repository = "https://github.com/example/meal-planner"
+Issues = "https://github.com/example/meal-planner/issues"

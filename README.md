@@ -23,15 +23,56 @@ cd meal-planner
 uv sync
 ```
 
-## Usage
+### Installing as a Package
 
-Run the Streamlit application:
+You can also install the meal planner as a package:
 
 ```bash
+# Install in development mode
+uv pip install -e .
+
+# Or install from PyPI (when published)
+pip install meal-planner
+```
+
+## Usage
+
+### Web Application
+
+Run the Streamlit web application:
+
+```bash
+# Using the app.py entry point
 uv run streamlit run app.py
+
+# Or using the CLI
+uv run python -m meal_planner web
+
+# Or if installed as package
+meal-planner web
 ```
 
 The application will be available at `http://localhost:8501`.
+
+### Command Line Interface
+
+The package includes a CLI with several commands:
+
+```bash
+# Show version
+meal-planner version
+
+# Run example
+meal-planner example
+
+# Start web application
+meal-planner web
+
+# Or using module syntax
+python -m meal_planner version
+python -m meal_planner example
+python -m meal_planner web
+```
 
 ## Database
 
@@ -64,11 +105,21 @@ The application uses three tables:
 
 ## Project Structure
 
-- `app.py`: Main Streamlit application
-- `db.py`: Database client class for DuckDB operations
-- `units.py`: Unit enum with standardized metric units
-- `example_usage.py`: Example script demonstrating DbClient usage
-- `meal_planner.db`: DuckDB database file (created automatically)
+```
+meal-planner/
+├── meal_planner/              # Main Python package
+│   ├── __init__.py           # Package initialization
+│   ├── __main__.py           # Module entry point
+│   ├── cli.py                # Command-line interface
+│   ├── db.py                 # Database client class
+│   ├── units.py              # Unit enum with standardized units
+│   └── streamlit_app.py      # Streamlit web application
+├── app.py                    # Entry point for Streamlit app
+├── example_usage.py          # Example script demonstrating usage
+├── pyproject.toml            # Package configuration
+├── README.md                 # This file
+└── meal_planner.db           # DuckDB database (created automatically)
+```
 
 ## DbClient Class
 
@@ -96,10 +147,43 @@ The application uses standardized metric units defined in the `Unit` enum:
 
 ## Example Usage
 
-To see the database client in action, run:
+### Programmatic Usage
+
+```python
+from meal_planner import DbClient, Unit
+
+# Create database client
+db = DbClient("my_meals.db")
+
+# Add a meal
+ingredients = [
+    ("pasta", 200, Unit.GRAM.value),
+    ("tomato sauce", 1, Unit.JAR.value),
+    ("garlic", 2, Unit.CLOVES.value)
+]
+db.add_meal("Simple Pasta", "Quick pasta dish", ingredients)
+
+# Get all meals
+meals = db.get_all_meals()
+for meal_id, name, description in meals:
+    print(f"{name}: {description}")
+
+# Generate shopping list
+shopping_list = db.generate_shopping_list([meal_id])
+for ingredient, quantity, unit in shopping_list:
+    print(f"- {ingredient}: {quantity} {unit}")
+```
+
+### Run Example Script
+
+To see a complete example in action:
 
 ```bash
+# Run the example script
 uv run python example_usage.py
+
+# Or use the CLI
+meal-planner example
 ```
 
 ## Requirements
