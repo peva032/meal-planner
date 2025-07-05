@@ -61,6 +61,32 @@ The application uses three tables:
 - `ingredients`: Stores ingredient information (id, name, unit)
 - `meal_ingredients`: Links meals to ingredients with quantities
 
+## Project Structure
+
+- `app.py`: Main Streamlit application
+- `db.py`: Database client class for DuckDB operations
+- `example_usage.py`: Example script demonstrating DbClient usage
+- `meal_planner.db`: DuckDB database file (created automatically)
+
+## DbClient Class
+
+The database operations are encapsulated in the `DbClient` class in `db.py`. Key methods include:
+
+- `add_meal(name, description, ingredients)`: Add a new meal
+- `get_all_meals()`: Retrieve all meals
+- `get_meal_ingredients(meal_id)`: Get ingredients for a specific meal
+- `generate_shopping_list(meal_ids)`: Generate aggregated shopping list
+- `delete_meal(meal_id)`: Delete a meal
+- `update_meal(meal_id, name, description, ingredients)`: Update an existing meal
+
+## Example Usage
+
+To see the database client in action, run:
+
+```bash
+uv run python example_usage.py
+```
+
 ## Requirements
 
 - Python 3.13
