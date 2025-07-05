@@ -1,138 +1,21 @@
 import streamlit as st
-import duckdb
 import pandas as pd
 from typing import List, Dict, Tuple
 import os
+from db import DbClient
 
-# Initialize database
-DB_PATH = "meal_planner.db"
-
-def init_database():
-    """Initialize the DuckDB database with required tables"""
-    conn = duckdb.connect(DB_PATH)
-    
-    # Create meals table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS meals (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR UNIQUE NOT NULL,
-            description TEXT
-        )
-    """)
-    
-    # Create ingredients table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS ingredients (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR UNIQUE NOT NULL,
-            unit VARCHAR NOT NULL DEFAULT 'unit'
-        )
-    """)
-    
-    # Create meal_ingredients junction table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS meal_ingredients (
-            meal_id INTEGER,
-            ingredient_id INTEGER,
-            quantity DECIMAL(10,2) NOT NULL,
-            FOREIGN KEY (meal_id) REFERENCES meals(id),
-            FOREIGN KEY (ingredient_id) REFERENCES ingredients(id),
-            PRIMARY KEY (meal_id, ingredient_id)
-        )
-    """)
-    
-    conn.close()
-
-def get_connection():
-    """Get a connection to the database"""
-    return duckdb.connect(DB_PATH)
-
-def add_meal(name: str, description: str, ingredients: List[Tuple[str, float, str]]):
-    """Add a new meal with its ingredients"""
-    conn = get_connection()
-    
-    try:
-        conn.execute("BEGIN TRANSACTION")
-        
-        # Insert meal
-        conn.execute("INSERT INTO meals (name, description) VALUES (?, ?)", 
-                    (name, description))
-        meal_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        
-        # Insert ingredients and link to meal
-        for ingredient_name, quantity, unit in ingredients:
-            # Insert ingredient if it doesn't exist
-            conn.execute("""
-                INSERT INTO ingredients (name, unit) 
-                VALUES (?, ?) 
-                ON CONFLICT (name) DO UPDATE SET unit = EXCLUDED.unit
-            """, (ingredient_name, unit))
-            
-            # Get ingredient ID
-            ingredient_id = conn.execute(
-                "SELECT id FROM ingredients WHERE name = ?", 
-                (ingredient_name,)
-            ).fetchone()[0]
-            
-            # Link meal and ingredient
-            conn.execute("""
-                INSERT INTO meal_ingredients (meal_id, ingredient_id, quantity)
-                VALUES (?, ?, ?)
-            """, (meal_id, ingredient_id, quantity))
-        
-        conn.execute("COMMIT")
-        return True
-        
-    except Exception as e:
-        conn.execute("ROLLBACK")
-        st.error(f"Error adding meal: {str(e)}")
-        return False
-    finally:
-        conn.close()
-
-def get_all_meals():
-    """Get all meals from the database"""
-    conn = get_connection()
-    result = conn.execute("SELECT id, name, description FROM meals ORDER BY name").fetchall()
-    conn.close()
-    return result
-
-def get_meal_ingredients(meal_id: int):
-    """Get ingredients for a specific meal"""
-    conn = get_connection()
-    result = conn.execute("""
-        SELECT i.name, mi.quantity, i.unit
-        FROM meal_ingredients mi
-        JOIN ingredients i ON mi.ingredient_id = i.id
-        WHERE mi.meal_id = ?
-        ORDER BY i.name
-    """, (meal_id,)).fetchall()
-    conn.close()
-    return result
-
-def generate_shopping_list(meal_ids: List[int]):
-    """Generate an aggregated shopping list for selected meals"""
-    conn = get_connection()
-    
-    # Get aggregated ingredients
-    result = conn.execute("""
-        SELECT i.name, SUM(mi.quantity) as total_quantity, i.unit
-        FROM meal_ingredients mi
-        JOIN ingredients i ON mi.ingredient_id = i.id
-        WHERE mi.meal_id IN ({})
-        GROUP BY i.name, i.unit
-        ORDER BY i.name
-    """.format(','.join('?' * len(meal_ids))), meal_ids).fetchall()
-    
-    conn.close()
-    return result
+# Initialize database client
+@st.cache_resource
+def get_db_client():
+    """Get cached database client instance"""
+    return DbClient()
 
 def main():
     st.title("🍽️ Meal Planner")
     st.markdown("Plan your meals and generate shopping lists!")
     
-    # Initialize database
-    init_database()
+    # Get database client
+    db = get_db_client()
     
     # Sidebar navigation
     st.sidebar.title("Navigation")
@@ -180,10 +63,13 @@ def main():
         # Save meal
         if st.button("Save Meal"):
             if meal_name and st.session_state.ingredients:
-                if add_meal(meal_name, meal_description, st.session_state.ingredients):
-                    st.success("Meal added successfully!")
-                    st.session_state.ingredients = []
-                    st.rerun()
+                try:
+                    if db.add_meal(meal_name, meal_description, st.session_state.ingredients):
+                        st.success("Meal added successfully!")
+                        st.session_state.ingredients = []
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error adding meal: {str(e)}")
             else:
                 st.error("Please provide a meal name and at least one ingredient.")
     
@@ -191,7 +77,7 @@ def main():
         st.header("Generate Shopping List")
         
         # Get all meals
-        meals = get_all_meals()
+        meals = db.get_all_meals()
         
         if not meals:
             st.info("No meals found. Please add some meals first.")
@@ -209,7 +95,7 @@ def main():
             selected_meal_ids = [meal_options[meal] for meal in selected_meals]
             
             # Generate shopping list
-            shopping_list = generate_shopping_list(selected_meal_ids)
+            shopping_list = db.generate_shopping_list(selected_meal_ids)
             
             if shopping_list:
                 st.subheader("Shopping List")
@@ -234,7 +120,7 @@ def main():
     elif page == "View Meals":
         st.header("All Meals")
         
-        meals = get_all_meals()
+        meals = db.get_all_meals()
         
         if not meals:
             st.info("No meals found. Please add some meals first.")
@@ -247,7 +133,7 @@ def main():
                     st.markdown(f"**Description:** {description}")
                 
                 # Get ingredients
-                ingredients = get_meal_ingredients(meal_id)
+                ingredients = db.get_meal_ingredients(meal_id)
                 
                 if ingredients:
                     st.markdown("**Ingredients:**")
