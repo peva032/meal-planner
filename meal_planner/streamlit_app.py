@@ -36,6 +36,8 @@ def main():
         selected_meal_id = None
         meal_name = ""
         meal_description = ""
+        meal_recipe_link = ""
+        meal_notes = ""
         
         if mode == "Edit Existing Meal":
             # Get all meals for selection
@@ -54,15 +56,39 @@ def main():
                     if meal_data:
                         meal_name = meal_data['name']
                         meal_description = meal_data['description'] or ""
+                        meal_recipe_link = meal_data['recipe_link'] or ""
+                        meal_notes = meal_data['notes'] or ""
                         
                         # Load existing ingredients into session state
                         if 'editing_meal_id' not in st.session_state or st.session_state.editing_meal_id != selected_meal_id:
                             st.session_state.editing_meal_id = selected_meal_id
                             existing_ingredients = db.get_meal_ingredients(selected_meal_id)
-                            st.session_state.ingredients = [
-                                (ing['ingredient_name'], float(ing['quantity']), ing['unit']) 
-                                for ing in existing_ingredients
-                            ]
+                            # Load ingredients with category information
+                            st.session_state.ingredients = []
+                            for ing in existing_ingredients:
+                                # Get ingredient from database to fetch category
+                                all_ingredients = db.get_all_ingredients()
+                                ingredient_category = None
+                                for db_ing in all_ingredients:
+                                    if db_ing.name.lower() == ing['ingredient_name'].lower():
+                                        ingredient_category = db_ing.category
+                                        break
+                                
+                                if ingredient_category:
+                                    st.session_state.ingredients.append((
+                                        ing['ingredient_name'], 
+                                        float(ing['quantity']), 
+                                        ing['unit'],
+                                        ingredient_category
+                                    ))
+                                else:
+                                    # Fallback for ingredients without category
+                                    st.session_state.ingredients.append((
+                                        ing['ingredient_name'], 
+                                        float(ing['quantity']), 
+                                        ing['unit'],
+                                        Category.NOT_SURE.name
+                                    ))
             else:
                 st.info("No meals found. Please add a meal first.")
                 st.stop()
@@ -73,8 +99,11 @@ def main():
                 st.session_state.ingredients = []
         
         # Meal details form
+        st.subheader("Meal Details")
         meal_name = st.text_input("Meal Name", value=meal_name)
         meal_description = st.text_area("Description (optional)", value=meal_description)
+        meal_recipe_link = st.text_input("Recipe Link (optional)", value=meal_recipe_link, placeholder="https://...")
+        meal_notes = st.text_area("Notes (optional)", value=meal_notes, placeholder="Personal notes, modifications, etc.")
         
         st.subheader("Ingredients")
         
@@ -83,7 +112,7 @@ def main():
             st.session_state.ingredients = []
         
         # Add ingredient form
-        col1, col2, col3, col4 = st.columns([3, 1, 1.5, 1])
+        col1, col2, col3, col4, col5 = st.columns([2.5, 1, 1.2, 1.5, 0.8])
         with col1:
             ingredient_name = st.text_input("Ingredient Name", key="ingredient_name")
         with col2:
@@ -109,18 +138,52 @@ def main():
             unit = unit_values[selected_index]
             
         with col4:
+            # Category selection
+            category_options = [(cat.display_name, cat.name) for cat in Category]
+            category_display_names = [option[0] for option in category_options]
+            category_values = [option[1] for option in category_options]
+            
+            # Default to "Not Sure"
+            default_cat_index = category_values.index(Category.NOT_SURE.name) if Category.NOT_SURE.name in category_values else 0
+            
+            selected_category_display = st.selectbox(
+                "Category",
+                options=category_display_names,
+                index=default_cat_index,
+                key="category_select"
+            )
+            
+            # Get the actual category value
+            selected_cat_index = category_display_names.index(selected_category_display)
+            category = category_values[selected_cat_index]
+            
+        with col5:
             if st.button("Add Ingredient"):
                 if ingredient_name and quantity > 0:
-                    st.session_state.ingredients.append((ingredient_name, quantity, unit))
+                    st.session_state.ingredients.append((ingredient_name, quantity, unit, category))
                     st.rerun()
         
         # Display current ingredients
         if st.session_state.ingredients:
             st.subheader("Current Ingredients")
-            for i, (name, qty, unit) in enumerate(st.session_state.ingredients):
+            for i, ingredient_tuple in enumerate(st.session_state.ingredients):
+                # Handle both 3-tuple and 4-tuple formats
+                if len(ingredient_tuple) == 3:
+                    name, qty, unit = ingredient_tuple
+                    category_display = ""
+                elif len(ingredient_tuple) == 4:
+                    name, qty, unit, category = ingredient_tuple
+                    try:
+                        cat_enum = Category[category] if hasattr(Category, category) else Category.from_string(category)
+                        category_display = f" ({cat_enum.display_name})"
+                    except:
+                        category_display = f" ({category})"
+                else:
+                    continue  # Skip malformed entries
+                
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    st.text(f"{name}: {qty} {unit}")
+                    st.text(f"{name}: {qty} {unit}{category_display}")
                 with col2:
                     if st.button("Remove", key=f"remove_{i}"):
                         st.session_state.ingredients.pop(i)
@@ -143,7 +206,14 @@ def main():
                 try:
                     if mode == "Edit Existing Meal" and selected_meal_id:
                         # Update existing meal
-                        if db.update_meal(selected_meal_id, meal_name, meal_description, st.session_state.ingredients):
+                        if db.update_meal(
+                            selected_meal_id, 
+                            meal_name, 
+                            meal_description, 
+                            meal_recipe_link, 
+                            meal_notes,
+                            st.session_state.ingredients
+                        ):
                             st.success("Meal updated successfully!")
                             # Clear editing state
                             if 'editing_meal_id' in st.session_state:
@@ -152,7 +222,13 @@ def main():
                             st.rerun()
                     else:
                         # Add new meal
-                        meal_id = db.add_meal(meal_name, meal_description, st.session_state.ingredients)
+                        meal_id = db.add_meal(
+                            meal_name, 
+                            meal_description, 
+                            meal_recipe_link, 
+                            meal_notes,
+                            st.session_state.ingredients
+                        )
                         if meal_id:
                             st.success("Meal added successfully!")
                             st.session_state.ingredients = []
@@ -289,16 +365,45 @@ def main():
         # Display meals
         for meal in meals:
             with st.expander(f"🍽️ {meal.name}"):
-                if meal.description:
-                    st.markdown(f"**Description:** {meal.description}")
+                # Get meal details for full information
+                meal_data = db.get_meal_by_id(meal.id)
                 
-                # Get ingredients
+                if meal_data:
+                    # Description
+                    if meal_data.get('description'):
+                        st.markdown(f"**Description:** {meal_data['description']}")
+                    
+                    # Recipe link
+                    if meal_data.get('recipe_link'):
+                        st.markdown(f"**Recipe Link:** [View Recipe]({meal_data['recipe_link']})")
+                    
+                    # Notes
+                    if meal_data.get('notes'):
+                        st.markdown(f"**Notes:** {meal_data['notes']}")
+                    
+                    # Separator if we have any details
+                    if meal_data.get('description') or meal_data.get('recipe_link') or meal_data.get('notes'):
+                        st.markdown("---")
+                
+                # Get ingredients with category information
                 ingredients = db.get_meal_ingredients(meal.id)
+                all_ingredients = db.get_all_ingredients()
                 
                 if ingredients:
                     st.markdown("**Ingredients:**")
                     for ingredient in ingredients:
-                        st.write(f"• {ingredient['ingredient_name']}: {ingredient['quantity']} {ingredient['unit']}")
+                        # Find category for this ingredient
+                        ingredient_category = "Not Sure"
+                        for db_ing in all_ingredients:
+                            if db_ing.name.lower() == ingredient['ingredient_name'].lower():
+                                try:
+                                    cat_enum = Category.from_string(db_ing.category)
+                                    ingredient_category = cat_enum.display_name
+                                except:
+                                    ingredient_category = db_ing.category
+                                break
+                        
+                        st.write(f"• {ingredient['ingredient_name']}: {ingredient['quantity']} {ingredient['unit']} ({ingredient_category})")
                 else:
                     st.write("No ingredients found.")
 
