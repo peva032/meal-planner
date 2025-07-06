@@ -3,7 +3,7 @@ import pandas as pd
 from typing import List, Dict, Tuple
 import os
 from .db import DbClient
-from .units import Unit
+from .models import Unit
 
 # Initialize database client
 @st.cache_resource
@@ -23,11 +23,58 @@ def main():
     page = st.sidebar.selectbox("Choose a page", ["Add Meal", "Generate Shopping List", "View Meals"])
     
     if page == "Add Meal":
-        st.header("Add New Meal")
+        st.header("Add/Edit Meal")
         
-        # Meal details
-        meal_name = st.text_input("Meal Name")
-        meal_description = st.text_area("Description (optional)")
+        # Mode selection
+        mode = st.radio(
+            "Choose action:",
+            ["Add New Meal", "Edit Existing Meal"],
+            horizontal=True
+        )
+        
+        # Initialize variables
+        selected_meal_id = None
+        meal_name = ""
+        meal_description = ""
+        
+        if mode == "Edit Existing Meal":
+            # Get all meals for selection
+            meals = db.get_all_meals()
+            if meals:
+                meal_options = {meal.name: meal.id for meal in meals}
+                selected_meal_name = st.selectbox(
+                    "Select meal to edit:",
+                    options=list(meal_options.keys())
+                )
+                
+                if selected_meal_name:
+                    selected_meal_id = meal_options[selected_meal_name]
+                    # Get meal details
+                    meal_data = db.get_meal_by_id(selected_meal_id)
+                    if meal_data:
+                        meal_name = meal_data['name']
+                        meal_description = meal_data['description'] or ""
+                        
+                        # Load existing ingredients into session state
+                        if 'editing_meal_id' not in st.session_state or st.session_state.editing_meal_id != selected_meal_id:
+                            st.session_state.editing_meal_id = selected_meal_id
+                            existing_ingredients = db.get_meal_ingredients(selected_meal_id)
+                            st.session_state.ingredients = [
+                                (ing['ingredient_name'], float(ing['quantity']), ing['unit']) 
+                                for ing in existing_ingredients
+                            ]
+            else:
+                st.info("No meals found. Please add a meal first.")
+                st.stop()
+        else:
+            # Reset editing state when switching to add mode
+            if 'editing_meal_id' in st.session_state:
+                del st.session_state.editing_meal_id
+                st.session_state.ingredients = []
+        
+        # Meal details form
+        meal_name = st.text_input("Meal Name", value=meal_name)
+        meal_description = st.text_area("Description (optional)", value=meal_description)
         
         st.subheader("Ingredients")
         
@@ -79,18 +126,61 @@ def main():
                         st.session_state.ingredients.pop(i)
                         st.rerun()
         
-        # Save meal
-        if st.button("Save Meal"):
+        # Save and Delete buttons
+        if mode == "Edit Existing Meal":
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                save_button = st.button("Update Meal", type="primary")
+            with col2:
+                delete_button = st.button("Delete Meal", type="secondary")
+        else:
+            save_button = st.button("Save Meal", type="primary")
+            delete_button = False
+        
+        # Handle save button
+        if save_button:
             if meal_name and st.session_state.ingredients:
                 try:
-                    if db.add_meal(meal_name, meal_description, st.session_state.ingredients):
-                        st.success("Meal added successfully!")
-                        st.session_state.ingredients = []
-                        st.rerun()
+                    if mode == "Edit Existing Meal" and selected_meal_id:
+                        # Update existing meal
+                        if db.update_meal(selected_meal_id, meal_name, meal_description, st.session_state.ingredients):
+                            st.success("Meal updated successfully!")
+                            # Clear editing state
+                            if 'editing_meal_id' in st.session_state:
+                                del st.session_state.editing_meal_id
+                            st.session_state.ingredients = []
+                            st.rerun()
+                    else:
+                        # Add new meal
+                        meal_id = db.add_meal(meal_name, meal_description, st.session_state.ingredients)
+                        if meal_id:
+                            st.success("Meal added successfully!")
+                            st.session_state.ingredients = []
+                            st.rerun()
                 except Exception as e:
-                    st.error(f"Error adding meal: {str(e)}")
+                    action = "updating" if mode == "Edit Existing Meal" else "adding"
+                    st.error(f"Error {action} meal: {str(e)}")
             else:
                 st.error("Please provide a meal name and at least one ingredient.")
+        
+        # Handle delete button
+        if delete_button and selected_meal_id:
+            # Show confirmation dialog
+            if st.button("⚠️ Confirm Delete", key="confirm_delete"):
+                try:
+                    if db.delete_meal(selected_meal_id):
+                        st.success("Meal deleted successfully!")
+                        # Clear editing state
+                        if 'editing_meal_id' in st.session_state:
+                            del st.session_state.editing_meal_id
+                        st.session_state.ingredients = []
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete meal.")
+                except Exception as e:
+                    st.error(f"Error deleting meal: {str(e)}")
+            else:
+                st.warning(f"Click 'Confirm Delete' to permanently delete '{meal_name}'. This action cannot be undone.")
     
     elif page == "Generate Shopping List":
         st.header("Generate Shopping List")
@@ -103,7 +193,7 @@ def main():
             return
         
         # Meal selection
-        meal_options = {f"{meal[1]}": meal[0] for meal in meals}
+        meal_options = {meal.name: meal.id for meal in meals}
         selected_meals = st.multiselect(
             "Select meals for your shopping list",
             options=list(meal_options.keys()),
@@ -121,7 +211,8 @@ def main():
                 
                 # Create DataFrame for better display
                 df = pd.DataFrame(shopping_list, columns=['Ingredient', 'Quantity', 'Unit'])
-                df['Quantity'] = df['Quantity'].round(2)
+                # Convert Decimal to float for proper display
+                df['Quantity'] = pd.to_numeric(df['Quantity']).round(2)
                 
                 st.dataframe(df, use_container_width=True)
                 
@@ -146,18 +237,18 @@ def main():
             return
         
         # Display meals
-        for meal_id, name, description in meals:
-            with st.expander(f"🍽️ {name}"):
-                if description:
-                    st.markdown(f"**Description:** {description}")
+        for meal in meals:
+            with st.expander(f"🍽️ {meal.name}"):
+                if meal.description:
+                    st.markdown(f"**Description:** {meal.description}")
                 
                 # Get ingredients
-                ingredients = db.get_meal_ingredients(meal_id)
+                ingredients = db.get_meal_ingredients(meal.id)
                 
                 if ingredients:
                     st.markdown("**Ingredients:**")
-                    for ingredient_name, quantity, unit in ingredients:
-                        st.write(f"• {ingredient_name}: {quantity} {unit}")
+                    for ingredient in ingredients:
+                        st.write(f"• {ingredient['ingredient_name']}: {ingredient['quantity']} {ingredient['unit']}")
                 else:
                     st.write("No ingredients found.")
 

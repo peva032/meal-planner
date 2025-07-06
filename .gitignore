@@ -158,9 +158,18 @@ cython_debug/
 #  project, it is recommended to not ignore the .idea/ directory but exclude specific files.
 #.idea/
 
-# DuckDB database files
+# Database files (personal data)
 *.db
 *.duckdb
+*.sqlite
+*.sqlite3
 
-# Streamlit
+# Personal meal data
+*.csv
+Meal Planner*.csv
+
+# Streamlit config
 .streamlit/
+
+# Package build artifacts
+*.egg-info/

@@ -1,247 +1,302 @@
-import duckdb
-from typing import List, Tuple, Optional
-import os
-from .units import Unit
+from sqlmodel import SQLModel, create_engine, Session, select
+from sqlalchemy import func
+from typing import List, Optional
+from .models import Ingredient, Meal, MealIngredient, Unit
 
 
 class DbClient:
-    """Database client for meal planner application using DuckDB"""
+    """Database client for meal planner application using SQLModel and SQLite"""
     
     def __init__(self, db_path: str = "meal_planner.db"):
         self.db_path = db_path
+        # Create SQLite engine with proper file path
+        self.engine = create_engine(f"sqlite:///{db_path}")
         self.init_database()
     
-    def get_connection(self):
-        """Get a connection to the database"""
-        return duckdb.connect(self.db_path)
-    
     def init_database(self):
-        """Initialize the DuckDB database with required tables"""
-        conn = self.get_connection()
-        
-        try:
-            # Create sequences
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS meals_id_seq START 1")
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS ingredients_id_seq START 1")
-            
-            # Create meals table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS meals (
-                    id INTEGER PRIMARY KEY DEFAULT nextval('meals_id_seq'),
-                    name VARCHAR UNIQUE NOT NULL,
-                    description TEXT
-                )
-            """)
-            
-            # Create ingredients table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS ingredients (
-                    id INTEGER PRIMARY KEY DEFAULT nextval('ingredients_id_seq'),
-                    name VARCHAR UNIQUE NOT NULL,
-                    unit VARCHAR NOT NULL DEFAULT 'piece'
-                )
-            """)
-            
-            # Create meal_ingredients junction table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS meal_ingredients (
-                    meal_id INTEGER,
-                    ingredient_id INTEGER,
-                    quantity DECIMAL(10,2) NOT NULL,
-                    FOREIGN KEY (meal_id) REFERENCES meals(id),
-                    FOREIGN KEY (ingredient_id) REFERENCES ingredients(id),
-                    PRIMARY KEY (meal_id, ingredient_id)
-                )
-            """)
-        finally:
-            conn.close()
+        """Initialize the database with SQLModel tables"""
+        # Create all tables defined in the models
+        SQLModel.metadata.create_all(self.engine)
     
-    def add_meal(self, name: str, description: str, ingredients: List[Tuple[str, float, str]]) -> bool:
-        """Add a new meal with its ingredients"""
-        conn = self.get_connection()
-        
-        try:
-            conn.execute("BEGIN TRANSACTION")
+    def add_meal(self, name: str, description: Optional[str] = None,
+                 recipe_link: Optional[str] = None, notes: Optional[str] = None,
+                 ingredients: Optional[List[tuple]] = None) -> int:
+        """Add a new meal with optional ingredients, returns meal ID"""
+        with Session(self.engine) as session:
+            # Check if meal already exists (case-insensitive)
+            existing_meal = session.exec(
+                select(Meal).where(func.lower(Meal.name) == func.lower(name))
+            ).first()
             
-            # Insert meal and get the ID
-            result = conn.execute("INSERT INTO meals (name, description) VALUES (?, ?) RETURNING id", 
-                        (name, description))
-            meal_id = result.fetchone()[0]
+            if existing_meal:
+                print(f"Meal '{name}' already exists (ID: {existing_meal.id}), skipping...")
+                return existing_meal.id
             
-            # Insert ingredients and link to meal
-            for ingredient_name, quantity, unit in ingredients:
-                # Insert ingredient if it doesn't exist
-                conn.execute("""
-                    INSERT INTO ingredients (name, unit) 
-                    VALUES (?, ?) 
-                    ON CONFLICT (name) DO UPDATE SET unit = EXCLUDED.unit
-                """, (ingredient_name, unit))
+            # Create and add meal
+            meal = Meal(
+                name=name, 
+                description=description,
+                recipe_link=recipe_link,
+                notes=notes
+            )
+            session.add(meal)
+            session.commit()
+            session.refresh(meal)
+            meal_id = meal.id
+            
+            # Add ingredients if provided
+            if ingredients:
+                for ingredient_tuple in ingredients:
+                    # Handle both 3-tuple (name, quantity, unit) and 4-tuple (name, quantity, unit, category)
+                    if len(ingredient_tuple) == 3:
+                        ingredient_name, quantity, unit = ingredient_tuple
+                        category = None
+                    elif len(ingredient_tuple) == 4:
+                        ingredient_name, quantity, unit, category = ingredient_tuple
+                    else:
+                        raise ValueError(f"Invalid ingredient tuple: {ingredient_tuple}")
+                    
+                    # Find or create ingredient (case-insensitive)
+                    ingredient = session.exec(
+                        select(Ingredient).where(func.lower(Ingredient.name) == func.lower(ingredient_name))
+                    ).first()
+                    
+                    if not ingredient:
+                        ingredient = Ingredient(
+                            name=ingredient_name,
+                            category=category if category else "NOT_SURE"
+                        )
+                        session.add(ingredient)
+                        session.commit()
+                        session.refresh(ingredient)
+                    
+                    # Check if this meal-ingredient relationship already exists
+                    existing_relationship = session.exec(
+                        select(MealIngredient).where(
+                            MealIngredient.meal_id == meal.id,
+                            MealIngredient.ingredient_id == ingredient.id
+                        )
+                    ).first()
+                    
+                    if existing_relationship:
+                        print(f"Ingredient '{ingredient_name}' already linked to meal '{name}', skipping...")
+                        continue
+                    
+                    # Create meal-ingredient relationship
+                    # Convert unit to string if it's an enum
+                    if isinstance(unit, Unit):
+                        unit_str = unit.value
+                    else:
+                        unit_str = unit
+                    
+                    meal_ingredient = MealIngredient(
+                        meal_id=meal.id,
+                        ingredient_id=ingredient.id,
+                        quantity=quantity,
+                        unit=unit_str
+                    )
+                    session.add(meal_ingredient)
                 
-                # Get ingredient ID
-                ingredient_id = conn.execute(
-                    "SELECT id FROM ingredients WHERE name = ?", 
-                    (ingredient_name,)
-                ).fetchone()[0]
-                
-                # Link meal and ingredient
-                conn.execute("""
-                    INSERT INTO meal_ingredients (meal_id, ingredient_id, quantity)
-                    VALUES (?, ?, ?)
-                """, (meal_id, ingredient_id, quantity))
+                session.commit()
             
-            conn.execute("COMMIT")
-            return True
-            
-        except Exception as e:
-            conn.execute("ROLLBACK")
-            raise e
-        finally:
-            conn.close()
+            return meal_id
     
-    def get_all_meals(self) -> List[Tuple[int, str, str]]:
+    def get_all_meals(self) -> List[Meal]:
         """Get all meals from the database"""
-        conn = self.get_connection()
-        try:
-            result = conn.execute("SELECT id, name, description FROM meals ORDER BY name").fetchall()
-            return result
-        finally:
-            conn.close()
+        with Session(self.engine) as session:
+            statement = select(Meal).order_by(Meal.name)
+            meals = session.exec(statement).all()
+            return list(meals)
     
-    def get_meal_by_id(self, meal_id: int) -> Optional[Tuple[int, str, str]]:
+    def get_meal_by_id(self, meal_id: int) -> Optional[dict]:
         """Get a specific meal by ID"""
-        conn = self.get_connection()
-        try:
-            result = conn.execute(
-                "SELECT id, name, description FROM meals WHERE id = ?", 
-                (meal_id,)
-            ).fetchone()
-            return result
-        finally:
-            conn.close()
+        with Session(self.engine) as session:
+            meal = session.get(Meal, meal_id)
+            if meal:
+                return {
+                    'id': meal.id,
+                    'name': meal.name,
+                    'description': meal.description,
+                    'recipe_link': meal.recipe_link,
+                    'notes': meal.notes,
+                    'created_at': meal.created_at,
+                    'updated_at': meal.updated_at
+                }
+            return None
     
-    def get_meal_ingredients(self, meal_id: int) -> List[Tuple[str, float, str]]:
-        """Get ingredients for a specific meal"""
-        conn = self.get_connection()
-        try:
-            result = conn.execute("""
-                SELECT i.name, mi.quantity, i.unit
-                FROM meal_ingredients mi
-                JOIN ingredients i ON mi.ingredient_id = i.id
-                WHERE mi.meal_id = ?
-                ORDER BY i.name
-            """, (meal_id,)).fetchall()
+    def get_meal_ingredients(self, meal_id: int) -> List[MealIngredient]:
+        """Get ingredients for a specific meal with ingredient details"""
+        with Session(self.engine) as session:
+            statement = (
+                select(MealIngredient)
+                .join(Ingredient)
+                .where(MealIngredient.meal_id == meal_id)
+                .order_by(MealIngredient.id)
+            )
+            meal_ingredients = session.exec(statement).all()
+            
+            # Force loading of ingredient relationships
+            result = []
+            for mi in meal_ingredients:
+                # Create a detached copy with ingredient name loaded
+                ingredient_name = mi.ingredient.name
+                result.append({
+                    'id': mi.id,
+                    'quantity': mi.quantity,
+                    'unit': mi.unit,
+                    'notes': mi.notes,
+                    'ingredient_name': ingredient_name
+                })
+            
             return result
-        finally:
-            conn.close()
     
-    def generate_shopping_list(self, meal_ids: List[int]) -> List[Tuple[str, float, str]]:
+    def delete_meal(self, meal_id: int) -> bool:
+        """Delete a meal and its ingredient associations"""
+        with Session(self.engine) as session:
+            meal = session.get(Meal, meal_id)
+            if not meal:
+                return False
+            
+            # Delete meal ingredients first
+            meal_ingredients = session.exec(
+                select(MealIngredient).where(MealIngredient.meal_id == meal_id)
+            ).all()
+            
+            for meal_ingredient in meal_ingredients:
+                session.delete(meal_ingredient)
+            
+            # Delete the meal
+            session.delete(meal)
+            session.commit()
+            return True
+    
+    def get_all_ingredients(self) -> List[Ingredient]:
+        """Get all ingredients from the database"""
+        with Session(self.engine) as session:
+            statement = select(Ingredient).order_by(Ingredient.name)
+            return list(session.exec(statement).all())
+    
+    def update_meal(self, meal_id: int, name: str, description: Optional[str] = None,
+                   recipe_link: Optional[str] = None, notes: Optional[str] = None,
+                   ingredients: Optional[List[tuple]] = None) -> bool:
+        """Update an existing meal"""
+        with Session(self.engine) as session:
+            meal = session.get(Meal, meal_id)
+            if not meal:
+                return False
+            
+            # Update meal details
+            meal.name = name
+            meal.description = description
+            meal.recipe_link = recipe_link
+            meal.notes = notes
+            
+            # Delete existing meal ingredients
+            existing_ingredients = session.exec(
+                select(MealIngredient).where(MealIngredient.meal_id == meal_id)
+            ).all()
+            
+            for meal_ingredient in existing_ingredients:
+                session.delete(meal_ingredient)
+            
+            # Add updated ingredients
+            if ingredients:
+                for ingredient_tuple in ingredients:
+                    # Handle both 3-tuple (name, quantity, unit) and 4-tuple (name, quantity, unit, category)
+                    if len(ingredient_tuple) == 3:
+                        ingredient_name, quantity, unit = ingredient_tuple
+                        category = None
+                    elif len(ingredient_tuple) == 4:
+                        ingredient_name, quantity, unit, category = ingredient_tuple
+                    else:
+                        raise ValueError(f"Invalid ingredient tuple: {ingredient_tuple}")
+                    
+                    # Find or create ingredient (case-insensitive)
+                    ingredient = session.exec(
+                        select(Ingredient).where(func.lower(Ingredient.name) == func.lower(ingredient_name))
+                    ).first()
+                    
+                    if not ingredient:
+                        ingredient = Ingredient(
+                            name=ingredient_name,
+                            category=category if category else "NOT_SURE"
+                        )
+                        session.add(ingredient)
+                        session.commit()
+                        session.refresh(ingredient)
+                    
+                    # Create meal-ingredient relationship
+                    # Convert unit to string if it's an enum
+                    if isinstance(unit, Unit):
+                        unit_str = unit.value
+                    else:
+                        unit_str = unit
+                    
+                    meal_ingredient = MealIngredient(
+                        meal_id=meal.id,
+                        ingredient_id=ingredient.id,
+                        quantity=quantity,
+                        unit=unit_str
+                    )
+                    session.add(meal_ingredient)
+            
+            session.commit()
+            return True
+    
+    def cleanup_unused_ingredients(self) -> int:
+        """Remove ingredients that are not used in any meals"""
+        with Session(self.engine) as session:
+            # Find ingredients not referenced in meal_ingredients
+            statement = (
+                select(Ingredient)
+                .where(
+                    Ingredient.id.notin_(
+                        select(MealIngredient.ingredient_id).distinct()
+                    )
+                )
+            )
+            
+            unused_ingredients = session.exec(statement).all()
+            count = len(unused_ingredients)
+            
+            for ingredient in unused_ingredients:
+                session.delete(ingredient)
+            
+            session.commit()
+            return count
+    
+    def generate_shopping_list(self, meal_ids: List[int]) -> List[tuple]:
         """Generate an aggregated shopping list for selected meals"""
         if not meal_ids:
             return []
         
-        conn = self.get_connection()
-        try:
-            # Get aggregated ingredients
-            result = conn.execute("""
-                SELECT i.name, SUM(mi.quantity) as total_quantity, i.unit
-                FROM meal_ingredients mi
-                JOIN ingredients i ON mi.ingredient_id = i.id
-                WHERE mi.meal_id IN ({})
-                GROUP BY i.name, i.unit
-                ORDER BY i.name
-            """.format(','.join('?' * len(meal_ids))), meal_ids).fetchall()
-            
-            return result
-        finally:
-            conn.close()
-    
-    def delete_meal(self, meal_id: int) -> bool:
-        """Delete a meal and its ingredient associations"""
-        conn = self.get_connection()
-        try:
-            conn.execute("BEGIN TRANSACTION")
-            
-            # Delete meal ingredients first (foreign key constraint)
-            conn.execute("DELETE FROM meal_ingredients WHERE meal_id = ?", (meal_id,))
-            
-            # Delete the meal
-            result = conn.execute("DELETE FROM meals WHERE id = ?", (meal_id,))
-            
-            conn.execute("COMMIT")
-            return result.rowcount > 0
-            
-        except Exception as e:
-            conn.execute("ROLLBACK")
-            raise e
-        finally:
-            conn.close()
-    
-    def update_meal(self, meal_id: int, name: str, description: str, 
-                   ingredients: List[Tuple[str, float, str]]) -> bool:
-        """Update an existing meal"""
-        conn = self.get_connection()
-        try:
-            conn.execute("BEGIN TRANSACTION")
-            
-            # Update meal details
-            conn.execute(
-                "UPDATE meals SET name = ?, description = ? WHERE id = ?",
-                (name, description, meal_id)
+        with Session(self.engine) as session:
+            # Get all meal ingredients for the selected meals with ingredient details
+            statement = (
+                select(MealIngredient, Ingredient)
+                .join(Ingredient, MealIngredient.ingredient_id == Ingredient.id)
+                .where(MealIngredient.meal_id.in_(meal_ids))
             )
             
-            # Delete existing meal ingredients
-            conn.execute("DELETE FROM meal_ingredients WHERE meal_id = ?", (meal_id,))
+            results = session.exec(statement).all()
             
-            # Insert updated ingredients
-            for ingredient_name, quantity, unit in ingredients:
-                # Insert ingredient if it doesn't exist
-                conn.execute("""
-                    INSERT INTO ingredients (name, unit) 
-                    VALUES (?, ?) 
-                    ON CONFLICT (name) DO UPDATE SET unit = EXCLUDED.unit
-                """, (ingredient_name, unit))
-                
-                # Get ingredient ID
-                ingredient_id = conn.execute(
-                    "SELECT id FROM ingredients WHERE name = ?", 
-                    (ingredient_name,)
-                ).fetchone()[0]
-                
-                # Link meal and ingredient
-                conn.execute("""
-                    INSERT INTO meal_ingredients (meal_id, ingredient_id, quantity)
-                    VALUES (?, ?, ?)
-                """, (meal_id, ingredient_id, quantity))
+            # Aggregate ingredients by name and unit
+            ingredient_totals = {}
             
-            conn.execute("COMMIT")
-            return True
+            for meal_ingredient, ingredient in results:
+                key = (ingredient.name, meal_ingredient.unit)
+                if key in ingredient_totals:
+                    ingredient_totals[key] += meal_ingredient.quantity
+                else:
+                    ingredient_totals[key] = meal_ingredient.quantity
             
-        except Exception as e:
-            conn.execute("ROLLBACK")
-            raise e
-        finally:
-            conn.close()
-    
-    def get_all_ingredients(self) -> List[Tuple[int, str, str]]:
-        """Get all ingredients from the database"""
-        conn = self.get_connection()
-        try:
-            result = conn.execute("SELECT id, name, unit FROM ingredients ORDER BY name").fetchall()
-            return result
-        finally:
-            conn.close()
-    
-    def cleanup_unused_ingredients(self):
-        """Remove ingredients that are not used in any meals"""
-        conn = self.get_connection()
-        try:
-            conn.execute("""
-                DELETE FROM ingredients 
-                WHERE id NOT IN (
-                    SELECT DISTINCT ingredient_id 
-                    FROM meal_ingredients
-                )
-            """)
-            return conn.rowcount
-        finally:
-            conn.close()
+            # Convert to list of tuples for compatibility
+            shopping_list = [
+                (name, quantity, unit)
+                for (name, unit), quantity in ingredient_totals.items()
+            ]
+            
+            # Sort by ingredient name
+            shopping_list.sort(key=lambda x: x[0])
+            
+            return shopping_list

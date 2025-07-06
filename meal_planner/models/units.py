@@ -18,10 +18,8 @@ class Unit(Enum):
     CUP = "cup"
     
     # Count/Pieces
-    PIECE = "piece"
-    PIECES = "pieces"
-    CLOVE = "clove"
-    CLOVES = "cloves"
+    ITEM = "item(s)"
+    CLOVE = "clove(s)"
     
     # Length (for things like pasta, vegetables)
     CENTIMETRE = "cm"
@@ -65,10 +63,8 @@ class Unit(Enum):
             ("Cup", cls.CUP.value),
             
             # Count/Pieces
-            ("Piece", cls.PIECE.value),
-            ("Pieces", cls.PIECES.value),
-            ("Clove", cls.CLOVE.value),
-            ("Cloves", cls.CLOVES.value),
+            ("Item(s)", cls.ITEM.value),
+            ("Clove(s)", cls.CLOVE.value),
             
             # Length
             ("Centimetre (cm)", cls.CENTIMETRE.value),

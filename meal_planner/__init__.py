@@ -8,9 +8,10 @@ This package provides:
 """
 
 from .db import DbClient
-from .units import Unit
+from .models.units import Unit
 from . import streamlit_app
 from . import cli
+from . import models
 
 __version__ = "1.0.0"
 __author__ = "Meal Planner Team"
@@ -21,4 +22,5 @@ __all__ = [
     "Unit",
     "streamlit_app",
     "cli",
+    "models",
 ]

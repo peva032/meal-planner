@@ -1,14 +1,17 @@
 # Meal Planner
 
-A simple Streamlit application for planning meals and generating shopping lists.
+A comprehensive Streamlit web application for planning meals and generating shopping lists with robust data management.
 
 ## Features
 
-- **Add Meals**: Create new meals with their ingredients and quantities
-- **Standardized Units**: Uses predefined metric units for consistency
-- **Generate Shopping Lists**: Select multiple meals and get an aggregated shopping list
-- **View Meals**: Browse all stored meals and their ingredients
-- **Data Persistence**: Uses DuckDB for local data storage
+- **Add & Edit Meals**: Create and modify meals with ingredients, quantities, and optional recipe links and notes
+- **Standardized Units**: Uses predefined metric units with comprehensive unit system
+- **Ingredient Categories**: Organize ingredients by shopping categories for efficient grocery trips
+- **Generate Shopping Lists**: Select multiple meals and get aggregated shopping lists with category organization
+- **View & Browse Meals**: Browse all stored meals with expandable ingredient details
+- **Data Import**: Import existing meal data from CSV files
+- **Data Persistence**: Uses SQLite for reliable local data storage
+- **Duplicate Prevention**: Case-insensitive uniqueness constraints prevent duplicate meals and ingredients
 
 ## Installation
 
@@ -19,20 +22,8 @@ This project uses `uv` for package management. Make sure you have `uv` installed
 git clone <repository-url>
 cd meal-planner
 
-# Install dependencies (if not already done)
+# Install dependencies
 uv sync
-```
-
-### Installing as a Package
-
-You can also install the meal planner as a package:
-
-```bash
-# Install in development mode
-uv pip install -e .
-
-# Or install from PyPI (when published)
-pip install meal-planner
 ```
 
 ## Usage
@@ -42,59 +33,54 @@ pip install meal-planner
 Run the Streamlit web application:
 
 ```bash
-# Using the app.py entry point
+# Start the web application
 uv run streamlit run app.py
-
-# Or using the CLI
-uv run python -m meal_planner web
-
-# Or if installed as package
-meal-planner web
 ```
 
 The application will be available at `http://localhost:8501`.
 
-### Command Line Interface
+### Data Import
 
-The package includes a CLI with several commands:
+Import existing meal data from CSV files:
 
 ```bash
-# Show version
-meal-planner version
-
-# Run example
-meal-planner example
-
-# Start web application
-meal-planner web
-
-# Or using module syntax
-python -m meal_planner version
-python -m meal_planner example
-python -m meal_planner web
+# Import meals from CSV
+uv run python import_meals_from_csv.py
 ```
 
 ## Database
 
-The application uses DuckDB to store data locally in a file called `meal_planner.db`. This file will be created automatically when you first run the application.
+The application uses SQLite to store data locally in a file called `meal_planner.db`. This file will be created automatically when you first run the application.
+
+### Database Features
+- **Case-insensitive uniqueness**: Prevents duplicate meals and ingredients regardless of capitalization
+- **Relational integrity**: Proper foreign key relationships between meals and ingredients
+- **Automatic timestamps**: Tracks creation and update times for all records
 
 ## How to Use
 
 1. **Add Meal**: 
    - Navigate to the "Add Meal" page
-   - Enter a meal name and optional description
+   - Enter a meal name and optional description, recipe link, and notes
    - Add ingredients one by one with their quantities and units
    - Save the meal
 
-2. **Generate Shopping List**:
+2. **Edit Meal**:
+   - Navigate to the "Add Meal" page and select "Edit Existing Meal"
+   - Choose a meal from the dropdown
+   - Modify the meal details and ingredients
+   - Update or delete the meal
+
+3. **Generate Shopping List**:
    - Navigate to the "Generate Shopping List" page
    - Select one or more meals from the list
    - View the aggregated shopping list
    - Download the shopping list as a CSV file
 
-3. **View Meals**:
+4. **View Meals**:
    - Navigate to the "View Meals" page
    - Browse all stored meals and their ingredients
+   - Expand meal cards to see ingredient details
 
 ## Database Schema
 
@@ -145,46 +131,6 @@ The application uses standardized metric units defined in the `Unit` enum:
 **Containers:** can, jar, bottle, packet, bag  
 **Fresh Produce:** head, bunch, stalk, leaf, leaves  
 
-## Example Usage
-
-### Programmatic Usage
-
-```python
-from meal_planner import DbClient, Unit
-
-# Create database client
-db = DbClient("my_meals.db")
-
-# Add a meal
-ingredients = [
-    ("pasta", 200, Unit.GRAM.value),
-    ("tomato sauce", 1, Unit.JAR.value),
-    ("garlic", 2, Unit.CLOVES.value)
-]
-db.add_meal("Simple Pasta", "Quick pasta dish", ingredients)
-
-# Get all meals
-meals = db.get_all_meals()
-for meal_id, name, description in meals:
-    print(f"{name}: {description}")
-
-# Generate shopping list
-shopping_list = db.generate_shopping_list([meal_id])
-for ingredient, quantity, unit in shopping_list:
-    print(f"- {ingredient}: {quantity} {unit}")
-```
-
-### Run Example Script
-
-To see a complete example in action:
-
-```bash
-# Run the example script
-uv run python example_usage.py
-
-# Or use the CLI
-meal-planner example
-```
 
 ## Requirements
 
