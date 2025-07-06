@@ -3,7 +3,7 @@ import pandas as pd
 from typing import List, Dict, Tuple
 import os
 from .db import DbClient
-from .models import Unit
+from .models import Unit, Category
 
 # Initialize database client
 @st.cache_resource
@@ -210,19 +210,69 @@ def main():
                 st.subheader("Shopping List")
                 
                 # Create DataFrame for better display
-                df = pd.DataFrame(shopping_list, columns=['Ingredient', 'Quantity', 'Unit'])
+                df = pd.DataFrame(shopping_list, columns=['Ingredient', 'Quantity', 'Unit', 'Category'])
                 # Convert Decimal to float for proper display
                 df['Quantity'] = pd.to_numeric(df['Quantity']).round(2)
                 
+                # Display the shopping list table
                 st.dataframe(df, use_container_width=True)
                 
-                # Download as CSV
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download Shopping List as CSV",
-                    data=csv,
-                    file_name=f"shopping_list_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
+                # Create formatted text for copying
+                def format_shopping_list_text(shopping_list):
+                    """Format shopping list as text with category display names."""
+                    formatted_lines = []
+                    for name, quantity, unit, category_str in shopping_list:
+                        # Get category display name
+                        try:
+                            category = Category.from_string(category_str)
+                            category_display = category.display_name
+                        except:
+                            category_display = "Not Sure"
+                        
+                        # Format quantity to remove unnecessary decimals
+                        if float(quantity) == int(float(quantity)):
+                            qty_str = str(int(float(quantity)))
+                        else:
+                            qty_str = str(float(quantity))
+                        
+                        formatted_lines.append(f"{name} - {qty_str} {unit} ({category_display})")
+                    
+                    return "\n".join(formatted_lines)
+                
+                # Generate formatted text
+                formatted_text = format_shopping_list_text(shopping_list)
+                
+                # Two-column layout for export options
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    # Download as CSV
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download as CSV",
+                        data=csv,
+                        file_name=f"shopping_list_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                
+                with col2:
+                    # Download as text
+                    st.download_button(
+                        label="📄 Download as Text",
+                        data=formatted_text,
+                        file_name=f"shopping_list_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+                
+                # Text area for copying
+                st.subheader("Copy Shopping List")
+                st.text_area(
+                    "Shopping list formatted for copying:",
+                    value=formatted_text,
+                    height=300,
+                    help="Select all text (Ctrl+A / Cmd+A) and copy (Ctrl+C / Cmd+C) to use elsewhere"
                 )
             else:
                 st.info("No ingredients found for selected meals.")

@@ -173,3 +173,4 @@ Meal Planner*.csv
 
 # Package build artifacts
 *.egg-info/
+test_copy_feature.html

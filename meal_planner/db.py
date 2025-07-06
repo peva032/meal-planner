@@ -1,7 +1,7 @@
 from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import func
 from typing import List, Optional
-from .models import Ingredient, Meal, MealIngredient, Unit
+from .models import Ingredient, Meal, MealIngredient, Unit, Category
 
 
 class DbClient:
@@ -266,7 +266,7 @@ class DbClient:
             return count
     
     def generate_shopping_list(self, meal_ids: List[int]) -> List[tuple]:
-        """Generate an aggregated shopping list for selected meals"""
+        """Generate an aggregated shopping list for selected meals with category information"""
         if not meal_ids:
             return []
         
@@ -280,23 +280,31 @@ class DbClient:
             
             results = session.exec(statement).all()
             
-            # Aggregate ingredients by name and unit
+            # Aggregate ingredients by name, unit, and category
             ingredient_totals = {}
             
             for meal_ingredient, ingredient in results:
-                key = (ingredient.name, meal_ingredient.unit)
+                key = (ingredient.name, meal_ingredient.unit, ingredient.category)
                 if key in ingredient_totals:
                     ingredient_totals[key] += meal_ingredient.quantity
                 else:
                     ingredient_totals[key] = meal_ingredient.quantity
             
-            # Convert to list of tuples for compatibility
+            # Convert to list of tuples with category information
             shopping_list = [
-                (name, quantity, unit)
-                for (name, unit), quantity in ingredient_totals.items()
+                (name, quantity, unit, category)
+                for (name, unit, category), quantity in ingredient_totals.items()
             ]
             
-            # Sort by ingredient name
-            shopping_list.sort(key=lambda x: x[0])
+            # Sort by category enum value, then by ingredient name
+            def get_category_order(item):
+                name, quantity, unit, category_str = item
+                try:
+                    category = Category.from_string(category_str)
+                    return (category.value, name.lower())
+                except:
+                    return (Category.NOT_SURE.value, name.lower())
+            
+            shopping_list.sort(key=get_category_order)
             
             return shopping_list
